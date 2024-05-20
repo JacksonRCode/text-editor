@@ -24,6 +24,7 @@ void enableRawMode(void) {
 
     // Copy terminal attributes to raw and then modify them
     struct termios raw = orig_termios;
+    raw.c_iflag &= ~(IXON);
     raw.c_lflag &= ~(ECHO | ICANON | ISIG);
         
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
