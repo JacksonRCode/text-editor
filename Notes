@@ -1,0 +1,42 @@
+// Get user input and store it in char c
+
+    /*
+    Terminal is in canonical mode to begin:
+      ->  this means that input is only recorded once the enter key is hit.
+    
+    Need to change to raw mode which stores input on each keystroke
+      ->  difficult to do
+    */
+
+/*
+    c_lflag field is for local flags or misc flags
+    c_iflag is for input flags
+    c_oflag is for output flags
+    c_cflag is for control flags
+
+    echo's bit value is all 0's except for the 4th bit
+    Negating with bitwise and causes it's value to change and
+    every other value to stay the same
+
+    This just makes it so that the terminal does not echo character
+    input
+*/
+
+raw.c_lflag &= ~(ECHO | ICANON);
+
+/*
+    Applies changed terminal attributes stored in raw.
+
+    TCSAFLUSH specifies when to apply change:
+    Here it waits for all pending output to be 
+    written to the terminal and discards any input
+    that hasn't been read
+
+    ICANON flag allows us to turn off canonical mode
+    which means we can read input byte-by-byte instead of line-by-line
+
+    tcsetattr() applies changes to terminal
+
+    // Echo stops us from seeing keystrokes and ICANON reads bit by bit
+    ICANON is not an input flag, it is a local flag in the c_lflag field
+*/
