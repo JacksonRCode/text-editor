@@ -25,6 +25,7 @@ void enableRawMode(void) {
     // Copy terminal attributes to raw and then modify them
     struct termios raw = orig_termios;
     raw.c_iflag &= ~(ICRNL | IXON);
+    raw.c_oflag &= ~(OPOST);
     raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
         
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
@@ -40,7 +41,7 @@ int main(void) {
             printf("%d\n", c);
         } else {
             // Prints ascii codes and character value
-            printf("%d ('%c')\n", c, c);
+            printf("%d ('%c')\r\n", c, c);
         }
     }
     return 0;
