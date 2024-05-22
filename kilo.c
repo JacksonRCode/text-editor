@@ -24,8 +24,11 @@ struct termios orig_termios;
 
 void die(const char *s) {
     /*
-    Print error message and exit
+    Print error message, clear screen, and exit
     */
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
     perror(s);
     exit(1);
 }
@@ -79,6 +82,8 @@ void editorProcessKeypress(void) {
 
     switch (c) {
         case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
     }
@@ -86,7 +91,7 @@ void editorProcessKeypress(void) {
 
 /*** Output ***/
 
-void editorRefreshScreen() {
+void editorRefreshScreen(void) {
     /*
     The 4 in write means we are writing 4 bytes out to the terminal
 
@@ -120,10 +125,12 @@ void editorRefreshScreen() {
 /*** Init ***/
 
 int main(void) {
+    // Clears screen and positions cursor at 1:1
     editorRefreshScreen();
     enableRawMode();
     
     while (1) {
+        editorRefreshScreen();
         editorProcessKeypress();
     }
 
