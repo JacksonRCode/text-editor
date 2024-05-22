@@ -58,23 +58,74 @@ void enableRawMode(void) {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+char editorReadKey(void) {
+    /*
+    Reads single bit at a time unless invalid and return it.
+    */
+    int nread;
+    char c;
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if (nread == -1 && errno != EAGAIN) die("read");
+    }
+
+    return c;
+}
+
+void editorProcessKeypress(void) {
+    /*
+    Handles keypresses.
+    */
+    char c = editorReadKey();
+
+    switch (c) {
+        case CTRL_KEY('q'):
+            exit(0);
+            break;
+    }
+}
+
+/*** Output ***/
+
+void editorRefreshScreen() {
+    /*
+    The 4 in write means we are writing 4 bytes out to the terminal
+
+    1st byte is \x1b which is the escape character or 27 in decimal
+
+    [2J are the other 3 bytes
+
+    We are writing an escape sequence to the terminal.
+    - Escape sequences always start with an escape character 27 
+      followed by a [ character. Escape sequences instruct the terminal to do
+      various text formatting tasks, such as coloring text, moving cursor,
+      and clearing parts of screen.
+
+    - J command clears the screen, the # before ca specifies part of screen
+      to clear:
+      - 0 = cursor and beyond
+      - 1 = up to cursor
+      - 2 = whole screen
+    */
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    /*
+    3 byte escape sequence
+
+    H command positions the cursor at row 1 col 1 by default
+    */
+    write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
+/*** Input ***/
+
 /*** Init ***/
 
 int main(void) {
+    editorRefreshScreen();
     enableRawMode();
     
     while (1) {
-        char c = '\0';
-        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) die("read");
-        if (iscntrl(c)) {
-            // Prints ascii codes of control characters
-            printf("%d\n", c);
-        } else {
-            // Prints ascii codes and character value
-            printf("%d ('%c')\r\n", c, c);
-        }
-        
-        if (c == CTRL_KEY('q')) break;
+        editorProcessKeypress();
     }
+
     return 0;
 }
