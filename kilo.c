@@ -1,3 +1,4 @@
+/*** Includes ***/
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -5,8 +6,21 @@
 #include <termios.h>
 #include <unistd.h>
 
-// This will store the original state of the terminal
+/*** Defines ***/
+
+/*
+Macros transform youdfr program before compilation
+#define creates macros -- this is a variable macro
+with a bitwise and operation that strips bit 5 and 6 from
+whatever key is pressed in combination with ctrl
+*/
+#define CTRL_KEY(k) ((k) & 0x1f)
+
+/*** Data ***/
+
 struct termios orig_termios;
+
+/*** Terminal ***/
 
 void die(const char *s) {
     /*
@@ -44,6 +58,8 @@ void enableRawMode(void) {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+/*** Init ***/
+
 int main(void) {
     enableRawMode();
     
@@ -58,7 +74,7 @@ int main(void) {
             printf("%d ('%c')\r\n", c, c);
         }
         
-        if (c == 'q') break;
+        if (c == CTRL_KEY('q')) break;
     }
     return 0;
 }
