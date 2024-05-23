@@ -44,6 +44,7 @@ struct editorConfig {
     int cx, cy;
     int rowOff; // row that user has scrolled to
     int colOff; //col user has scrolled to
+    int deadSnap;
     int screenRows;
     int screenCols;
     int numRows;
@@ -332,6 +333,17 @@ void editorRefreshScreen(void) {
     abFree(&ab);
 }
 
+/*** Input Helper ***/
+
+void snapCursorX(void) {
+    erow *row = (E.cy >= E.numRows) ? NULL : &E.row[E.cy];
+    if (row && E.deadSnap < row->size) {
+        E.cx = E.deadSnap;
+    } else if (row) {
+        E.cx = row->size;
+    }
+}
+
 /*** Input ***/
 
 void editorMoveCursor(int key) {
@@ -340,24 +352,29 @@ void editorMoveCursor(int key) {
 
     switch (key) {
         case ARROW_LEFT:
-            if (E.cx != 0) E.cx--;
+            if (E.cx != 0) {
+               E.cx--;
+               E.deadSnap = E.cx;
+            }
             break;
         case ARROW_RIGHT:
-            if (row && E.cx < row->size) E.cx++;
+            if (row && E.cx < row->size) {
+                E.cx++;
+                E.deadSnap = E.cx;
+            }
             break;
         case ARROW_UP:
-            if (E.cy != 0) E.cy--;
+            if (E.cy != 0) {
+                E.cy--;
+                snapCursorX();
+            }
             break;
         case ARROW_DOWN:
             if (E.cy != E.numRows) {
                 E.cy++;
+                snapCursorX();
             }
             break;
-    }
-    row = (E.cy >= E.numRows) ? NULL : &E.row[E.cy];
-    int rowLen = row ? row->size : 0;
-    if (E.cx > rowLen) {
-        E.cx = rowLen;
     }
 }
 
@@ -412,6 +429,7 @@ void initEditor(void) {
     E.numRows = 0;
     E.rowOff = 0; // scrolled to top by default
     E.colOff = 0; // scrolled to start by default
+    E.deadSnap = 0; // Holds column value when moving cursor to line without text
     E.row = NULL;
 
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
