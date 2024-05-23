@@ -16,6 +16,9 @@ Macros transform youdfr program before compilation
 with a bitwise and operation that strips bit 5 and 6 from
 whatever key is pressed in combination with ctrl
 */
+
+#define KILO_VERSION "0.0.1"
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 /*** Data ***/
@@ -172,7 +175,23 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenrows; y++) {
-        abAppend(ab, "~", 1);
+        if (y == E.screenrows / 3) {
+            char welcome[80];
+            int welcomeLen = snprintf(welcome, sizeof(welcome),
+                "Kilo editor -- version %s", KILO_VERSION);
+            if (welcomeLen > E.screencols) welcomeLen = E.screencols;
+            int padding = (E.screencols - welcomeLen) / 2;
+            if (padding) {
+                abAppend(ab, "~", 1);
+                padding--;
+            }
+            while (padding--) abAppend(ab, " ", 1);
+            abAppend(ab, welcome, welcomeLen);
+        } else {
+            abAppend(ab, "~", 1);
+        }
+        // K erases current line with no argument
+        abAppend(ab, "\x1b[K", 3);
 
         // Makes sure a newline isn't written on the last line, 
         // resulting in a line with no tilde.
@@ -187,7 +206,6 @@ void editorRefreshScreen(void) {
 
     //clear screen then set cursor to top left
     abAppend(&ab, "\x1b[?25l", 6);
-    abAppend(&ab, "\x1b[2J", 4);
     abAppend(&ab, "\x1b[H", 3);
 
     editorDrawRows(&ab);
