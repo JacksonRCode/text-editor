@@ -1,4 +1,8 @@
 /*** Includes ***/
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -41,7 +45,7 @@ struct editorConfig {
     int screenRows;
     int screenCols;
     int numRows;
-    erow row;
+    erow *row;
     struct termios orig_termios;
 };
 
@@ -185,6 +189,19 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
+/*** Row Operations ***/
+
+void editorAppendRow(char *s, size_t len) {
+    E.row = realloc(E.row, sizeof(erow) * (E.numRows + 1));
+
+    int at = E.numRows;
+    E.row[at].size = len;
+    E.row[at].chars = malloc(len+1);
+    memcpy(E.row[at].chars, s, len);
+    E.row[at].chars[len] = '\0';
+    E.numRows++;;
+}
+
 /*** File I/O ***/
 
 void editorOpen(char *filename) {
@@ -195,16 +212,12 @@ void editorOpen(char *filename) {
     size_t lineCap = 0;
     ssize_t lineLen;
     lineLen = getline(&line, &lineCap, fp);
-    if (lineLen != -1) {
+    while ((lineLen = getline(&line, &lineCap, fp)) != -1) {
         while (lineLen > 0 && (line[lineLen - 1] == '\n' ||
                                line[lineLen - 1] == '\r'))
             lineLen--;
         
-        E.row.size = lineLen;
-        E.row.chars = malloc(lineLen + 1);
-        memcpy(E.row.chars, line, lineLen);
-        E.row.chars[lineLen] = '\0';
-        E.numRows = 1;
+        editorAppendRow(line, lineLen);
     }
     free(line);
     fclose(fp);
@@ -242,7 +255,8 @@ void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenRows; y++) {
         if (y >= E.numRows) {  
-            if (y == E.screenRows / 3) {
+            // Only display welcome message when buffer is empty
+            if (E.numRows == 0 && y == E.screenRows / 3) {
                 char welcome[80];
                 int welcomeLen = snprintf(welcome, sizeof(welcome),
                     "Kilo editor -- version %s", KILO_VERSION);
@@ -258,9 +272,9 @@ void editorDrawRows(struct abuf *ab) {
                 abAppend(ab, "~", 1);
             }
         } else {
-            int len = E.row.size;
+            int len = E.row[y].size;
             if (len > E.screenCols) len = E.screenCols;
-            abAppend(ab, E.row.chars, len);
+            abAppend(ab, E.row[y].chars, len);
         }
         // K erases current line with no argument
         abAppend(ab, "\x1b[K", 3);
@@ -360,6 +374,7 @@ void initEditor(void) {
     E.cx = 0;
     E.cy = 0;
     E.numRows = 0;
+    E.row = NULL;
 
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
 }
