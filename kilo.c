@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -107,6 +108,8 @@ int getCursorPosition(int *rows, int *cols) {
 
     while (i < sizeof(buf) - 1) {
         if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+        // We look for R because the cursor position is stored like:
+        // xx;yyR where xx are row nums and yy are col nums
         if (buf[i] == 'R') break;
         i++;
     }
@@ -136,47 +139,62 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
+/*** Append Buffer ***/
+
+// need to create dynamic string type that supports appending
+
+struct abuf {
+    // b is an array not a character jeez
+    char *b;
+    int len;
+};
+
+// represents empty buffer and acts as constructor for abuf type
+#define ABUF_INIT {NULL, 0}
+
+void abAppend(struct abuf *ab, const char *s, int len) {
+    // make sure to allocate enough memory to hold old str + new str
+    // char [] is an array you dummy jeez
+    char *new = realloc(ab->b, ab->len + len);
+
+    if (new == NULL) return;
+    memcpy(&new[ab->len], s, len);
+    ab->b = new;
+    ab->len += len;
+}
+
+void abFree(struct abuf *ab) {
+    free(ab->b);
+}
 
 /*** Output ***/
 
-void editorDrawRows(void) {
+void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenrows; y++) {
-        write(STDOUT_FILENO, "~\r\n", 3);
+        abAppend(ab, "~", 1);
+
+        // Makes sure a newline isn't written on the last line, 
+        // resulting in a line with no tilde.
+        if (y < E.screenrows - 1) {
+            abAppend(ab, "\r\n", 2);
+        }
     }
 }
 
 void editorRefreshScreen(void) {
-    /*
-    The 4 in write means we are writing 4 bytes out to the terminal
+    struct abuf ab = ABUF_INIT;
 
-    1st byte is \x1b which is the escape character or 27 in decimal
+    //clear screen then set cursor to top left
+    abAppend(&ab, "\x1b[2J", 4);
+    abAppend(&ab, "\x1b[H", 3);
 
-    [2J are the other 3 bytes
+    editorDrawRows(&ab);
 
-    We are writing an escape sequence to the terminal.
-    - Escape sequences always start with an escape character 27 
-      followed by a [ character. Escape sequences instruct the terminal to do
-      various text formatting tasks, such as coloring text, moving cursor,
-      and clearing parts of screen.
+    abAppend(&ab, "\x1b[H", 3);
 
-    - J command clears the screen, the # before ca specifies part of screen
-      to clear:
-      - 0 = cursor and beyond
-      - 1 = up to cursor
-      - 2 = whole screen
-    */
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    /*
-    3 byte escape sequence
-
-    H command positions the cursor at row 1 col 1 by default
-    */
-    write(STDOUT_FILENO, "\x1b[H", 3);
-
-    editorDrawRows();
-
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    write(STDOUT_FILENO, ab.b, ab.len);
+    abFree(&ab);
 }
 
 /*** Input ***/
