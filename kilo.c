@@ -10,23 +10,25 @@
 
 /*** Defines ***/
 
-/*
-Macros transform youdfr program before compilation
-#define creates macros -- this is a variable macro
-with a bitwise and operation that strips bit 5 and 6 from
-whatever key is pressed in combination with ctrl
-*/
-
 #define KILO_VERSION "0.0.1"
 
 #define CTRL_KEY(k) ((k) & 0x1f)
+
+enum editorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT, // 1001
+    ARROW_UP, // 1002
+    ARROW_DOWN // 1003
+};
 
 /*** Data ***/
 
 // Gloal struct containing editor state
 struct editorConfig {
-    int screenrows;
-    int screencols;
+    // cx and cy keep track of cursors x and y position.
+    int cx, cy;
+    int screenRows;
+    int screenCols;
     struct termios orig_termios;
 };
 
@@ -73,7 +75,7 @@ void enableRawMode(void) {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
-char editorReadKey(void) {
+int editorReadKey(void) {
     /*
     Reads single bit at a time unless invalid and return it.
     */
@@ -83,21 +85,26 @@ char editorReadKey(void) {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
 
-    return c;
-}
+    if (c == '\x1b') {
+        char seq[3];
 
-void editorProcessKeypress(void) {
-    /*
-    Handles keypresses.
-    */
-    char c = editorReadKey();
+        // Read the next two bytes into the seq buffer
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
 
-    switch (c) {
-        case CTRL_KEY('q'):
-            write(STDOUT_FILENO, "\x1b[2J", 4);
-            write(STDOUT_FILENO, "\x1b[H", 3);
-            exit(0);
-            break;
+        
+        if (seq[0] == '[') {
+            switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+            }
+        }
+
+        return '\x1b';
+    }   else {
+            return c;
     }
 }
 
@@ -174,13 +181,13 @@ void abFree(struct abuf *ab) {
 
 void editorDrawRows(struct abuf *ab) {
     int y;
-    for (y = 0; y < E.screenrows; y++) {
-        if (y == E.screenrows / 3) {
+    for (y = 0; y < E.screenRows; y++) {
+        if (y == E.screenRows / 3) {
             char welcome[80];
             int welcomeLen = snprintf(welcome, sizeof(welcome),
                 "Kilo editor -- version %s", KILO_VERSION);
-            if (welcomeLen > E.screencols) welcomeLen = E.screencols;
-            int padding = (E.screencols - welcomeLen) / 2;
+            if (welcomeLen > E.screenCols) welcomeLen = E.screenCols;
+            int padding = (E.screenCols - welcomeLen) / 2;
             if (padding) {
                 abAppend(ab, "~", 1);
                 padding--;
@@ -195,7 +202,7 @@ void editorDrawRows(struct abuf *ab) {
 
         // Makes sure a newline isn't written on the last line, 
         // resulting in a line with no tilde.
-        if (y < E.screenrows - 1) {
+        if (y < E.screenRows - 1) {
             abAppend(ab, "\r\n", 2);
         }
     }
@@ -210,8 +217,11 @@ void editorRefreshScreen(void) {
 
     editorDrawRows(&ab);
 
-    abAppend(&ab, "\x1b[H", 3);
-    abAppend(&ab, "\x1b[?25H", 6);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy+1, E.cx+1);
+    abAppend(&ab, buf, strlen(buf));
+
+    abAppend(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.b, ab.len);
     abFree(&ab);
@@ -219,13 +229,54 @@ void editorRefreshScreen(void) {
 
 /*** Input ***/
 
+void editorMoveCursor(int key) {
+    switch (key) {
+        case ARROW_LEFT:
+            E.cx--;
+            break;
+        case ARROW_RIGHT:
+            E.cx++;
+            break;
+        case ARROW_UP:
+            E.cy--;
+            break;
+        case ARROW_DOWN:
+            E.cy++;
+            break;
+    }
+}
+
+void editorProcessKeypress(void) {
+    /*
+    Handles keypresses.
+    */
+    int c = editorReadKey();
+
+    switch (c) {
+        case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            exit(0);
+            break;
+
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
+            editorMoveCursor(c);
+            break;
+    }
+}
+
 /*** Init ***/
 
 void initEditor(void) {
     /*
     Initializes all fields in the E struct.
     */
-    if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+    E.cx = 0;
+    E.cy = 0;
+    if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
 }
 
 int main(void) {
