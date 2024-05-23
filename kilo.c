@@ -42,6 +42,8 @@ typedef struct erow {
 struct editorConfig {
     // Gloal struct containing editor state
     int cx, cy;
+    int rowOff; // row that user has scrolled to
+    int colOff; //col user has scrolled to
     int screenRows;
     int screenCols;
     int numRows;
@@ -251,10 +253,31 @@ void abFree(struct abuf *ab) {
 
 /*** Output ***/
 
+void editorScroll(void) {
+    // Row offset is at the beginning of the screen
+    if (E.cy < E.rowOff) {
+        // This shifts screen as cursor moves up
+        E.rowOff = E.cy;
+    }
+    if (E.cy >= E.rowOff + E.screenRows) {
+        // This shifts screen as cursor moves down
+        E.rowOff = E.cy - E.screenRows + 1;
+    }
+    if (E.cx < E.colOff) {
+        // Scrolling to left
+        E.colOff = E.cx;
+    }
+    if (E.cx >= E.colOff + E.screenCols) {
+        // Scrolling to right
+        E.colOff = E.cx - E.screenCols + 1;
+    }
+}
+
 void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < E.screenRows; y++) {
-        if (y >= E.numRows) {  
+        int fileRow = y + E.rowOff;
+        if (fileRow >= E.numRows) {  
             // Only display welcome message when buffer is empty
             if (E.numRows == 0 && y == E.screenRows / 3) {
                 char welcome[80];
@@ -272,9 +295,10 @@ void editorDrawRows(struct abuf *ab) {
                 abAppend(ab, "~", 1);
             }
         } else {
-            int len = E.row[y].size;
+            int len = E.row[fileRow].size - E.colOff;
+            if (len < 0) len = 0;
             if (len > E.screenCols) len = E.screenCols;
-            abAppend(ab, E.row[y].chars, len);
+            abAppend(ab, &E.row[fileRow].chars[E.colOff], len);
         }
         // K erases current line with no argument
         abAppend(ab, "\x1b[K", 3);
@@ -288,6 +312,8 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorRefreshScreen(void) {
+    editorScroll();
+    
     struct abuf ab = ABUF_INIT;
 
     //clear screen then set cursor to top left
@@ -297,7 +323,7 @@ void editorRefreshScreen(void) {
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy+1, E.cx+1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowOff) +1, (E.cx - E.colOff) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
@@ -309,19 +335,29 @@ void editorRefreshScreen(void) {
 /*** Input ***/
 
 void editorMoveCursor(int key) {
+    // Get current row
+    erow *row = (E.cy >= E.numRows) ? NULL : &E.row[E.cy];
+
     switch (key) {
         case ARROW_LEFT:
             if (E.cx != 0) E.cx--;
             break;
         case ARROW_RIGHT:
-            if (E.cx != E.screenCols) E.cx++;
+            if (row && E.cx < row->size) E.cx++;
             break;
         case ARROW_UP:
             if (E.cy != 0) E.cy--;
             break;
         case ARROW_DOWN:
-            if (E.cy != E.screenRows) E.cy++;
+            if (E.cy != E.numRows) {
+                E.cy++;
+            }
             break;
+    }
+    row = (E.cy >= E.numRows) ? NULL : &E.row[E.cy];
+    int rowLen = row ? row->size : 0;
+    if (E.cx > rowLen) {
+        E.cx = rowLen;
     }
 }
 
@@ -374,6 +410,8 @@ void initEditor(void) {
     E.cx = 0;
     E.cy = 0;
     E.numRows = 0;
+    E.rowOff = 0; // scrolled to top by default
+    E.colOff = 0; // scrolled to start by default
     E.row = NULL;
 
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
