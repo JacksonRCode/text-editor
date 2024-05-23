@@ -353,15 +353,23 @@ void editorMoveCursor(int key) {
     switch (key) {
         case ARROW_LEFT:
             if (E.cx != 0) {
-               E.cx--;
-               E.deadSnap = E.cx;
+                E.cx--;
+            } else if (E.cy != 0) {
+                E.cy--;
+                E.cx = E.row[E.cy].size;
             }
+            E.deadSnap = E.cx;
+
             break;
         case ARROW_RIGHT:
             if (row && E.cx < row->size) {
                 E.cx++;
-                E.deadSnap = E.cx;
+            } else if (row && E.cx == row->size) {
+                E.cy++;
+                E.cx = 0;
             }
+            E.deadSnap = E.cx;
+
             break;
         case ARROW_UP:
             if (E.cy != 0) {
