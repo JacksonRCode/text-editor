@@ -45,6 +45,7 @@ typedef struct erow {
 struct editorConfig {
     // Gloal struct containing editor state
     int cx, cy;
+    int rx; //index into the render field
     int rowOff; // row that user has scrolled to
     int colOff; //col user has scrolled to
     int deadSnap;
@@ -197,6 +198,19 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** Row Operations ***/
 
+int editorRowCxToRx(erow *row, int cx) {
+    int rx = 0;
+    int j;
+    for (j = 0; j < row->size; j++) {
+        if (row->chars == '\t') {
+            rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+        }
+        rx++;
+    }
+
+    return rx;
+}
+
 void editorUpdateRow(erow *row) {
     /*
     Characters in chars are transferred to and then formatted
@@ -295,6 +309,11 @@ void abFree(struct abuf *ab) {
 /*** Output ***/
 
 void editorScroll(void) {
+    E.rx = 0;
+    if (E.cy < E.numRows) {
+        E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
+    }
+
     // Row offset is at the beginning of the screen
     if (E.cy < E.rowOff) {
         // This shifts screen as cursor moves up
@@ -304,13 +323,13 @@ void editorScroll(void) {
         // This shifts screen as cursor moves down
         E.rowOff = E.cy - E.screenRows + 1;
     }
-    if (E.cx < E.colOff) {
+    if (E.rx < E.colOff) {
         // Scrolling to left
-        E.colOff = E.cx;
+        E.colOff = E.rx;
     }
-    if (E.cx >= E.colOff + E.screenCols) {
+    if (E.rx >= E.colOff + E.screenCols) {
         // Scrolling to right
-        E.colOff = E.cx - E.screenCols + 1;
+        E.colOff = E.rx - E.screenCols + 1;
     }
 }
 
@@ -364,7 +383,8 @@ void editorRefreshScreen(void) {
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowOff) +1, (E.cx - E.colOff) + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowOff) + 1,
+                                              (E.rx - E.colOff) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
@@ -474,6 +494,7 @@ void initEditor(void) {
     */
     E.cx = 0;
     E.cy = 0;
+    E.rx = 0;
     E.numRows = 0;
     E.rowOff = 0; // scrolled to top by default
     E.colOff = 0; // scrolled to start by default
