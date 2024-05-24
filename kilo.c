@@ -6,11 +6,13 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /*** Defines ***/
@@ -53,6 +55,9 @@ struct editorConfig {
     int screenCols;
     int numRows;
     erow *row;
+    char *fileName;
+    char statusmsg[80];
+    time_t statusmsg_time;
     struct termios orig_termios;
 };
 
@@ -261,6 +266,9 @@ void editorAppendRow(char *s, size_t len) {
 /*** File I/O ***/
 
 void editorOpen(char *filename) {
+    free(E.fileName);
+    E.fileName = strdup(filename);
+
     FILE *fp = fopen(filename, "r");
     if (!fp) die("fopen");
 
@@ -368,6 +376,40 @@ void editorDrawRows(struct abuf *ab) {
     }
 }
 
+void editorDrawStatusBar(struct abuf *ab) {
+    // Escape sequence 7m for za inverted colors ya??
+    abAppend(ab, "\x1b[7m", 4);
+    char status[80], rStatus[80];
+    int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+        E.fileName ? E.fileName : "[No Name]", E.numRows);
+    int rlen = snprintf(rStatus, sizeof(rStatus), "%d/%d",
+        E.cy + 1, E.numRows);
+    if (len > E.screenCols) len = E.screenCols;
+    abAppend(ab, status, len);
+    while (len < E.screenCols) {
+        if (E.screenCols - len == rlen) {
+            abAppend(ab, rStatus, rlen);
+            break;
+        } else {
+            abAppend(ab, " ", 1);
+            len++;
+        }
+    }
+    // Use za m to svitch back to za normal colors ya??
+    abAppend(ab, "\x1b[m", 3);
+    abAppend(ab, "\r\n", 2);
+}
+
+void editorDrawMessageBar(struct abuf *ab) {
+    // esc sequence K clears message bar
+    abAppend(ab, "\x1b[K", 3);
+    int msgLen = strlen(E.statusmsg);
+    if (msgLen > E.screenCols) msgLen = E.screenCols;
+    // Only display the message if it is less than 5 seconds old
+    if (msgLen && time(NULL) - E.statusmsg_time < 5)
+        abAppend(ab, E.statusmsg, msgLen);
+}
+
 void editorRefreshScreen(void) {
     editorScroll();
     
@@ -378,6 +420,8 @@ void editorRefreshScreen(void) {
     abAppend(&ab, "\x1b[H", 3);
 
     editorDrawRows(&ab);
+    editorDrawStatusBar(&ab);
+    editorDrawMessageBar(&ab);
 
     char buf[32];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowOff) + 1,
@@ -388,6 +432,16 @@ void editorRefreshScreen(void) {
 
     write(STDOUT_FILENO, ab.b, ab.len);
     abFree(&ab);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+    // ... make this a variadic function
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+    va_end(ap);
+    // passing NULL to time gets current time
+    E.statusmsg_time = time(NULL);
 }
 
 /*** Input Helper ***/
@@ -506,9 +560,12 @@ void initEditor(void) {
     E.colOff = 0; // scrolled to start by default
     E.deadSnap = 0; // Holds column value when moving cursor to line without text
     E.row = NULL;
+    E.fileName = NULL;
+    E.statusmsg[0] = '\0';
+    E.statusmsg_time = 0;
 
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
-    E.screenRows -= 1;
+    E.screenRows -= 2;
     //sd
 }
 
@@ -518,7 +575,9 @@ int main(int argc, char *argv[]) {
     if (argc >= 2) {
         editorOpen(argv[1]);
     }
-    
+
+    editorSetStatusMessage("HELP: Ctrl-Q = quit");
+
     while (1) {
         editorRefreshScreen();
         editorProcessKeypress();
