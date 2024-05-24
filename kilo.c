@@ -201,10 +201,9 @@ int getWindowSize(int *rows, int *cols) {
 int editorRowCxToRx(erow *row, int cx) {
     int rx = 0;
     int j;
-    for (j = 0; j < row->size; j++) {
-        if (row->chars == '\t') {
+    for (j = 0; j < cx; j++) {
+        if (row->chars[j] == '\t')
             rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
-        }
         rx++;
     }
 
@@ -236,7 +235,7 @@ void editorUpdateRow(erow *row) {
             // Add spaces until you hit a column divisible by 8 (tab stop)
             while (i % KILO_TAB_STOP != 0) row->render[i++] = ' ';
         } else {
-            row->render[i] = row->chars[j];
+            row->render[i++] = row->chars[j];
         }
     }
     row->render[i] = '\0';
@@ -268,7 +267,6 @@ void editorOpen(char *filename) {
     char *line = NULL;
     size_t lineCap = 0;
     ssize_t lineLen;
-    lineLen = getline(&line, &lineCap, fp);
     while ((lineLen = getline(&line, &lineCap, fp)) != -1) {
         while (lineLen > 0 && (line[lineLen - 1] == '\n' ||
                                line[lineLen - 1] == '\r'))
@@ -359,15 +357,14 @@ void editorDrawRows(struct abuf *ab) {
             if (len < 0) len = 0;
             if (len > E.screenCols) len = E.screenCols;
             abAppend(ab, &E.row[fileRow].render[E.colOff], len);
+            // int len = E.row[fileRow].size - E.colOff;
+            // if (len < 0) len = 0;
+            // if (len > E.screenCols) len = E.screenCols;
+            // abAppend(ab, &E.row[fileRow].chars[E.colOff], len);
         }
         // K erases current line with no argument
         abAppend(ab, "\x1b[K", 3);
-
-        // Makes sure a newline isn't written on the last line, 
-        // resulting in a line with no tilde.
-        if (y < E.screenRows - 1) {
-            abAppend(ab, "\r\n", 2);
-        }
+        abAppend(ab, "\r\n", 2);        
     }
 }
 
@@ -464,12 +461,21 @@ void editorProcessKeypress(void) {
             break;
 
         case END_KEY:
-            E.cx = E.screenCols - 1;
+            if (E.cy < E.numRows)
+                E.cx = E.row[E.cy].size;
             break;
 
         case PAGE_UP:
         case PAGE_DOWN:
             {
+                if (c == PAGE_UP) {
+                    E.cy = E.rowOff;
+                } else if (c == PAGE_DOWN) {
+                    E.cy = E.rowOff + E.screenRows - 1;
+                    if (E.cy > E.numRows) E.cy = E.numRows;
+                }
+
+
                 int times = E.screenRows;
                 while (times--)
                     editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -502,6 +508,8 @@ void initEditor(void) {
     E.row = NULL;
 
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
+    E.screenRows -= 1;
+    //sd
 }
 
 int main(int argc, char *argv[]) {
