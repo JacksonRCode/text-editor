@@ -16,6 +16,7 @@
 /*** Defines ***/
 
 #define KILO_VERSION "0.0.1"
+#define KILO_TAB_STOP 8
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -196,6 +197,38 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** Row Operations ***/
 
+void editorUpdateRow(erow *row) {
+    /*
+    Characters in chars are transferred to and then formatted
+    in render. Render takes inputs and puts them into a universal
+    format on all OS.
+    */
+    
+    int tabs = 0;
+    int j;
+    for (j = 0; j < row->size; j++) {
+        if (row->chars[j] == '\t') tabs++;
+    }
+
+    free(row->render);
+    // Tabs will take max of 8 spaces, and they already take 1
+    // So multiply # of tabs by 7 to allocate correct amount of memory
+    row->render = malloc(row->size + tabs*(KILO_TAB_STOP - 1) + 1);
+
+    int i = 0;
+    for (j = 0; j < row->size; j++) {
+        if (row->chars[j] == '\t') {
+            row->render[i++] = ' ';
+            // Add spaces until you hit a column divisible by 8 (tab stop)
+            while (i % KILO_TAB_STOP != 0) row->render[i++] = ' ';
+        } else {
+            row->render[i] = row->chars[j];
+        }
+    }
+    row->render[i] = '\0';
+    row->rSize = i;
+}
+
 void editorAppendRow(char *s, size_t len) {
     E.row = realloc(E.row, sizeof(erow) * (E.numRows + 1));
 
@@ -207,6 +240,7 @@ void editorAppendRow(char *s, size_t len) {
 
     E.row[at].rSize = 0;
     E.row[at].render = NULL;
+    editorUpdateRow(&E.row[at]);
 
     E.numRows++;;
 }
@@ -302,10 +336,10 @@ void editorDrawRows(struct abuf *ab) {
                 abAppend(ab, "~", 1);
             }
         } else {
-            int len = E.row[fileRow].size - E.colOff;
+            int len = E.row[fileRow].rSize - E.colOff;
             if (len < 0) len = 0;
             if (len > E.screenCols) len = E.screenCols;
-            abAppend(ab, &E.row[fileRow].chars[E.colOff], len);
+            abAppend(ab, &E.row[fileRow].render[E.colOff], len);
         }
         // K erases current line with no argument
         abAppend(ab, "\x1b[K", 3);
