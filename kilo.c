@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 enum editorKey {
+    BACKSPACE = 127,
     // set to high value so they don't interfere with any char vals
     ARROW_LEFT = 1000,
     ARROW_RIGHT, // 1001
@@ -263,7 +265,52 @@ void editorAppendRow(char *s, size_t len) {
     E.numRows++;;
 }
 
+void editorRowInsertChar(erow *row, int at, int c) {
+    // at is the index we want to insert character at
+    if (at < 0 || at > row->size) at = row->size;
+    // add 2 to make room for the null byte
+    row->chars = realloc(row->chars, row->size + 2);
+    // Copy row->size - at + 1 bytes
+    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+    row->size++;
+    row->chars[at] = c;
+    editorUpdateRow(row);
+}
+
+/*** Editor Operations ***/
+
+void editorInsertChar(int c) {
+    if (E.cy == E.numRows) {
+        editorAppendRow("", 0);
+    }
+    editorRowInsertChar(&E.row[E.cy], E.cx, c);
+    E.cx++;
+}
+
 /*** File I/O ***/
+
+char *editorRowsToString(int *bufLen) {
+    // Converts row of erow structs into a single string 
+    // that is ready to be written out to a file
+    int totLen = 0;
+    int j;
+    for (j = 0; j < E.numRows; j++) {
+        // Add 1 for '\n'
+        totLen = E.row[j].size + 1;
+    }
+    *bufLen = totLen;
+
+    char *buf = malloc(totLen);
+    char *p = buf;
+    for (j = 0; j < E.numRows; j++) {
+        memcpy(p, E.row[j].chars, E.row[j].size);
+        p += E.row[j].size;
+        *p = '\n';
+        p++;
+    }   
+
+    return buf;
+}
 
 void editorOpen(char *filename) {
     free(E.fileName);
@@ -504,6 +551,11 @@ void editorProcessKeypress(void) {
     int c = editorReadKey();
 
     switch (c) {
+        // Enter
+        case '\r':
+            /* TODO */
+            break;
+
         case CTRL_KEY('q'):
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
@@ -517,6 +569,12 @@ void editorProcessKeypress(void) {
         case END_KEY:
             if (E.cy < E.numRows)
                 E.cx = E.row[E.cy].size;
+            break;
+
+        case BACKSPACE:
+        case CTRL_KEY('h'):
+        case DEL_KEY:
+            /* TODO */
             break;
 
         case PAGE_UP:
@@ -543,6 +601,13 @@ void editorProcessKeypress(void) {
             editorMoveCursor(c);
             break;
 
+        case CTRL_KEY('l'):
+        case '\x1b':
+            break;
+
+        default:
+            editorInsertChar(c);
+            break;
     }
 }
 
