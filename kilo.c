@@ -57,6 +57,7 @@ struct editorConfig {
     int screenCols;
     int numRows;
     erow *row;
+    int dirty;
     char *fileName;
     char statusmsg[80];
     time_t statusmsg_time;
@@ -64,6 +65,10 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+/*** Prototypes ***/
+
+void editorSetStatusMessage(const char *fmt, ...);
 
 /*** Terminal ***/
 
@@ -250,6 +255,7 @@ void editorUpdateRow(erow *row) {
 }
 
 void editorAppendRow(char *s, size_t len) {
+    // Update rows
     E.row = realloc(E.row, sizeof(erow) * (E.numRows + 1));
 
     int at = E.numRows;
@@ -262,7 +268,8 @@ void editorAppendRow(char *s, size_t len) {
     E.row[at].render = NULL;
     editorUpdateRow(&E.row[at]);
 
-    E.numRows++;;
+    E.numRows++;
+    E.dirty++;
 }
 
 void editorRowInsertChar(erow *row, int at, int c) {
@@ -275,6 +282,7 @@ void editorRowInsertChar(erow *row, int at, int c) {
     row->size++;
     row->chars[at] = c;
     editorUpdateRow(row);
+    E.dirty++;
 }
 
 /*** Editor Operations ***/
@@ -296,7 +304,7 @@ char *editorRowsToString(int *bufLen) {
     int j;
     for (j = 0; j < E.numRows; j++) {
         // Add 1 for '\n'
-        totLen = E.row[j].size + 1;
+        totLen += E.row[j].size + 1;
     }
     *bufLen = totLen;
 
@@ -331,6 +339,31 @@ void editorOpen(char *filename) {
     }
     free(line);
     fclose(fp);
+    E.dirty = 0;
+}
+
+void editorSave(void) {
+    if (E.fileName == NULL) return;
+
+    int len;
+    char *buf = editorRowsToString(&len);
+
+    // Open file to read/write or create file with 0644 permissions (r/w)
+    int fd = open(E.fileName, O_RDWR | O_CREAT, 0644);
+    if (fd != -1) {
+        if (ftruncate(fd, len) != -1) {
+            if (write(fd, buf, len) == len) {
+                close(fd);
+                free(buf);
+                E.dirty = 0;
+                editorSetStatusMessage("%d bytes written to disk", len);
+                return;
+            }
+        }
+        close(fd);
+    }
+    free(buf);
+    editorSetStatusMessage("Can't save! I/O erro: %s", strerror(errno));
 }
 
 /*** Append Buffer ***/
@@ -427,8 +460,9 @@ void editorDrawStatusBar(struct abuf *ab) {
     // Escape sequence 7m for za inverted colors ya??
     abAppend(ab, "\x1b[7m", 4);
     char status[80], rStatus[80];
-    int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-        E.fileName ? E.fileName : "[No Name]", E.numRows);
+    int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+        E.fileName ? E.fileName : "[No Name]", E.numRows,
+        E.dirty ? "(modified)" : "");
     int rlen = snprintf(rStatus, sizeof(rStatus), "%d/%d",
         E.cy + 1, E.numRows);
     if (len > E.screenCols) len = E.screenCols;
@@ -562,6 +596,10 @@ void editorProcessKeypress(void) {
             exit(0);
             break;
 
+        case CTRL_KEY('s'):
+            editorSave();
+            break;
+
         case HOME_KEY:
             E.cx = 0;
             break;
@@ -625,6 +663,7 @@ void initEditor(void) {
     E.colOff = 0; // scrolled to start by default
     E.deadSnap = 0; // Holds column value when moving cursor to line without text
     E.row = NULL;
+    E.dirty = 0;
     E.fileName = NULL;
     E.statusmsg[0] = '\0';
     E.statusmsg_time = 0;
@@ -641,7 +680,7 @@ int main(int argc, char *argv[]) {
         editorOpen(argv[1]);
     }
 
-    editorSetStatusMessage("HELP: Ctrl-Q = quit");
+    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit");
 
     while (1) {
         editorRefreshScreen();
